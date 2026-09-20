@@ -1306,12 +1306,13 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
 
   function buildSummary(data){
     const wrap=el('div','fin-summary');
-    const savings=data.income>0?Math.round((data.income-data.spent)/data.income*100):0;
+    const hasIncome=data.income>0;
+    const savings=hasIncome?Math.round((data.income-data.spent)/data.income*100):null;
     const cards=[
       {lbl:'spent',val:data.spent.toFixed(2),cls:'neg'},
       {lbl:'income',val:data.income.toFixed(2),cls:'pos'},
       {lbl:'balance',val:data.balance.toFixed(2),cls:''},
-      {lbl:'savings rate',val:savings+'%',cls:savings>=0?'pos':'neg'}
+      {lbl:'savings rate',val:hasIncome?savings+'%':'—',cls:hasIncome?(savings>=0?'pos':'neg'):''}
     ];
     cards.forEach(c=>{
       const card=el('div','fin-card');
@@ -1396,16 +1397,20 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
   }
 
   function finRecategorize(t,newCat,data){
+    let url='';
+    try{url=localStorage.getItem('pb_fin_webhook')||'';}catch(e){}
+    if(!url||!t.id)return;
     const prevCat=t.cat,prevColor=t.color;
     const newCatObj=data.categories.find(c=>c.name===newCat);
     t.cat=newCat;
     if(newCatObj)t.color=newCatObj.color;
-    let url='';
-    try{url=localStorage.getItem('pb_fin_webhook')||'';}catch(e){}
-    if(!url||!t.id)return;
     fetch(finWriteUrl(url),{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'recategorize',txn_id:t.id,category:newCat})})
-      .catch(()=>{t.cat=prevCat;t.color=prevColor;finRender(data);});
+      .catch(()=>{
+        t.cat=prevCat;t.color=prevColor;
+        finRender(data);
+        const n=document.getElementById('fin-offline-note');if(n)n.textContent='offline · sample data';
+      });
   }
 
   function buildSide(data){

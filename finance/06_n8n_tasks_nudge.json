@@ -19,7 +19,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- One round trip: counts, a formatted open-items summary, and\n-- which message (if any) is worth sending, all in one row.\nWITH s AS (\n  SELECT tasks, synced_at FROM pb.daily_snapshot WHERE id = 1\n),\nbase AS (\n  SELECT\n    COALESCE((SELECT tasks FROM s), '[]'::jsonb) AS tasks,\n    COALESCE((SELECT synced_at::date = CURRENT_DATE FROM s), FALSE) AS is_fresh\n)\nSELECT\n  (SELECT count(*) FROM jsonb_array_elements(tasks) t\n     WHERE (t->>'dailyDone')::boolean) AS done_count,\n  (SELECT count(*) FROM jsonb_array_elements(tasks) t\n     WHERE NOT (t->>'dailyDone')::boolean) AS open_count,\n  (SELECT string_agg(\n      '#' || (t->>'num') || ' ' || (t->>'label') ||\n      CASE WHEN (t->>'severity')::int = 1 THEN ' (urgent)' ELSE '' END ||\n      CASE WHEN (t->>'due') = to_char(CURRENT_DATE,'YYYY-MM-DD') THEN ', due today' ELSE '' END,\n      ', ')\n   FROM jsonb_array_elements(tasks) t\n   WHERE NOT (t->>'dailyDone')::boolean) AS open_summary,\n  CASE\n    WHEN is_fresh AND (SELECT count(*) FROM jsonb_array_elements(tasks) t\n                          WHERE NOT (t->>'dailyDone')::boolean) > 0\n      THEN 'digest'\n    WHEN NOT is_fresh AND EXTRACT(HOUR FROM now() AT TIME ZONE 'Europe/Vilnius') = 9\n      THEN 'remind_to_plan'\n    ELSE ''\n  END AS nudge_kind\nFROM base;",
+        "query": "-- One round trip: counts, a formatted open-items summary, and\n-- which message (if any) is worth sending, all in one row.\nWITH s AS (\n  SELECT tasks, synced_at FROM pb.daily_snapshot WHERE id = 1\n),\nbase AS (\n  SELECT\n    COALESCE((SELECT tasks FROM s), '[]'::jsonb) AS tasks,\n    COALESCE((SELECT synced_at::date = CURRENT_DATE FROM s), FALSE) AS is_fresh\n)\nSELECT\n  (SELECT count(*)::int FROM jsonb_array_elements(tasks) t\n     WHERE (t->>'dailyDone')::boolean) AS done_count,\n  (SELECT count(*)::int FROM jsonb_array_elements(tasks) t\n     WHERE NOT (t->>'dailyDone')::boolean) AS open_count,\n  (SELECT string_agg(\n      '#' || (t->>'num') || ' ' || (t->>'label') ||\n      CASE\n        WHEN (t->>'severity')::int = 1 AND (t->>'due') = to_char(CURRENT_DATE,'YYYY-MM-DD')\n          THEN ' (urgent, due today)'\n        WHEN (t->>'severity')::int = 1\n          THEN ' (urgent)'\n        WHEN (t->>'due') = to_char(CURRENT_DATE,'YYYY-MM-DD')\n          THEN ' (due today)'\n        ELSE ''\n      END,\n      ', ')\n   FROM jsonb_array_elements(tasks) t\n   WHERE NOT (t->>'dailyDone')::boolean) AS open_summary,\n  CASE\n    WHEN is_fresh AND jsonb_array_length(tasks) > 0\n         AND (SELECT count(*)::int FROM jsonb_array_elements(tasks) t\n                WHERE NOT (t->>'dailyDone')::boolean) > 0\n      THEN 'digest'\n    WHEN (NOT is_fresh OR jsonb_array_length(tasks) = 0)\n         AND EXTRACT(HOUR FROM now() AT TIME ZONE 'Europe/Vilnius') = 9\n      THEN 'remind_to_plan'\n    ELSE ''\n  END AS nudge_kind\nFROM base;",
         "options": {}
       },
       "id": "c2000000-0000-4000-8000-000000000002",
@@ -53,8 +53,8 @@
     {
       "parameters": {
         "chatId": "={{ $vars.TG_CHAT_ID }}",
-        "text": "=*{{ $now.toFormat('HH:mm') }}* · {{ $json.done_count }} of {{ $json.done_count + $json.open_count }} done. Still open: {{ $json.open_summary }}",
-        "additionalFields": { "parse_mode": "Markdown", "appendAttribution": false }
+        "text": "={{ $now.toFormat('HH:mm') }} · {{ $json.done_count }} of {{ $json.done_count + $json.open_count }} done. Still open: {{ $json.open_summary }}",
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "c2000000-0000-4000-8000-000000000004",
       "name": "Send Digest",
@@ -67,7 +67,7 @@
       "parameters": {
         "chatId": "={{ $vars.TG_CHAT_ID }}",
         "text": "You haven't planned today yet — open the board.",
-        "additionalFields": { "parse_mode": "Markdown", "appendAttribution": false }
+        "additionalFields": { "appendAttribution": false }
       },
       "id": "c2000000-0000-4000-8000-000000000005",
       "name": "Send Plan Reminder",
