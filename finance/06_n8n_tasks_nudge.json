@@ -1,0 +1,93 @@
+{
+  "name": "Priority Board · Tasks Nudge",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [
+          { "field": "cronExpression", "expression": "0 9 * * *" },
+          { "field": "cronExpression", "expression": "0 13 * * *" },
+          { "field": "cronExpression", "expression": "0 17 * * *" }
+        ] }
+      },
+      "id": "c2000000-0000-4000-8000-000000000001",
+      "name": "Check-in times",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 0],
+      "notes": "09:00 / 13:00 / 17:00 daily. Downstream SQL reads now() to tell which slot fired."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- One round trip: counts, a formatted open-items summary, and\n-- which message (if any) is worth sending, all in one row.\nWITH s AS (\n  SELECT tasks, synced_at FROM pb.daily_snapshot WHERE id = 1\n),\nbase AS (\n  SELECT\n    COALESCE((SELECT tasks FROM s), '[]'::jsonb) AS tasks,\n    COALESCE((SELECT synced_at::date = CURRENT_DATE FROM s), FALSE) AS is_fresh\n)\nSELECT\n  (SELECT count(*) FROM jsonb_array_elements(tasks) t\n     WHERE (t->>'dailyDone')::boolean) AS done_count,\n  (SELECT count(*) FROM jsonb_array_elements(tasks) t\n     WHERE NOT (t->>'dailyDone')::boolean) AS open_count,\n  (SELECT string_agg(\n      '#' || (t->>'num') || ' ' || (t->>'label') ||\n      CASE WHEN (t->>'severity')::int = 1 THEN ' (urgent)' ELSE '' END ||\n      CASE WHEN (t->>'due') = to_char(CURRENT_DATE,'YYYY-MM-DD') THEN ', due today' ELSE '' END,\n      ', ')\n   FROM jsonb_array_elements(tasks) t\n   WHERE NOT (t->>'dailyDone')::boolean) AS open_summary,\n  CASE\n    WHEN is_fresh AND (SELECT count(*) FROM jsonb_array_elements(tasks) t\n                          WHERE NOT (t->>'dailyDone')::boolean) > 0\n      THEN 'digest'\n    WHEN NOT is_fresh AND EXTRACT(HOUR FROM now()) = 9\n      THEN 'remind_to_plan'\n    ELSE ''\n  END AS nudge_kind\nFROM base;",
+        "options": {}
+      },
+      "id": "c2000000-0000-4000-8000-000000000002",
+      "name": "Read Snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-420, 0],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "rules": { "values": [
+          { "conditions": { "options": { "version": 2, "caseSensitive": true, "leftValue": "" }, "combinator": "and",
+            "conditions": [ { "id": "n1", "operator": { "type": "string", "operation": "equals" },
+              "leftValue": "={{ $json.nudge_kind }}", "rightValue": "digest" } ] },
+            "outputKey": "digest" },
+          { "conditions": { "options": { "version": 2, "caseSensitive": true, "leftValue": "" }, "combinator": "and",
+            "conditions": [ { "id": "n2", "operator": { "type": "string", "operation": "equals" },
+              "leftValue": "={{ $json.nudge_kind }}", "rightValue": "remind_to_plan" } ] },
+            "outputKey": "remind_to_plan" }
+        ] },
+        "options": { "fallbackOutput": "none" }
+      },
+      "id": "c2000000-0000-4000-8000-000000000003",
+      "name": "Worth pinging?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-200, 0],
+      "notes": "All-done and already-said-once cases fall through to no output — silence by default, same philosophy as the finance digest."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.TG_CHAT_ID }}",
+        "text": "=*{{ $now.toFormat('HH:mm') }}* · {{ $json.done_count }} of {{ $json.done_count + $json.open_count }} done. Still open: {{ $json.open_summary }}",
+        "additionalFields": { "parse_mode": "Markdown", "appendAttribution": false }
+      },
+      "id": "c2000000-0000-4000-8000-000000000004",
+      "name": "Send Digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [40, -80],
+      "credentials": { "telegramApi": { "id": "TG_BOT", "name": "Telegram bot" } }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.TG_CHAT_ID }}",
+        "text": "You haven't planned today yet — open the board.",
+        "additionalFields": { "parse_mode": "Markdown", "appendAttribution": false }
+      },
+      "id": "c2000000-0000-4000-8000-000000000005",
+      "name": "Send Plan Reminder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [40, 80],
+      "credentials": { "telegramApi": { "id": "TG_BOT", "name": "Telegram bot" } }
+    }
+  ],
+  "connections": {
+    "Check-in times": { "main": [ [ { "node": "Read Snapshot", "type": "main", "index": 0 } ] ] },
+    "Read Snapshot":  { "main": [ [ { "node": "Worth pinging?", "type": "main", "index": 0 } ] ] },
+    "Worth pinging?": { "main": [
+                          [ { "node": "Send Digest", "type": "main", "index": 0 } ],
+                          [ { "node": "Send Plan Reminder", "type": "main", "index": 0 } ]
+                        ] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Europe/Vilnius" },
+  "active": false,
+  "pinData": {},
+  "meta": { "instanceId": "priority-board-tasks" },
+  "tags": [ { "name": "tasks-nudge" } ]
+}
