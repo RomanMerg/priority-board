@@ -1412,8 +1412,8 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
     mount.appendChild(cols);
   }
 
+  finRender(SAMPLE);
   window.finRender=finRender;
-  window.finOnShow=function(){finRender(finData);};
 })();
 
 load();
