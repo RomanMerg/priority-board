@@ -1360,14 +1360,51 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
       const row=el('div','fin-txn-row');
       row.appendChild(el('span','fin-txn-date',t.date));
       row.appendChild(el('span','fin-txn-desc',t.desc));
-      const chip=el('span','fin-txn-cat',t.cat);
-      chip.style.cssText='border-color:'+t.color+';color:'+t.color;
-      row.appendChild(chip);
+      const chipWrap=document.createElement('span');
+      row.appendChild(chipWrap);
+      renderTxnCat(chipWrap,t,data);
       row.appendChild(el('span','fin-txn-amt '+(t.amount<0?'neg':'pos'),fmtAmt(t.amount)));
       body.appendChild(row);
     });
     col.appendChild(body);
     return col;
+  }
+
+  function renderTxnCat(wrap,t,data){
+    wrap.innerHTML='';
+    const chip=el('span','fin-txn-cat',t.cat);
+    chip.style.cssText='border-color:'+t.color+';color:'+t.color;
+    chip.title='click to recategorize';
+    chip.onclick=()=>{
+      wrap.innerHTML='';
+      const sel=document.createElement('select');sel.className='fin-txn-cat-sel';
+      const names=data.categories.map(c=>c.name);
+      if(names.indexOf(t.cat)===-1)names.unshift(t.cat);
+      names.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;if(n===t.cat)o.selected=true;sel.appendChild(o);});
+      sel.onchange=()=>{finRecategorize(t,sel.value,data);renderTxnCat(wrap,t,data);};
+      sel.onblur=()=>{renderTxnCat(wrap,t,data);};
+      wrap.appendChild(sel);
+      sel.focus();
+    };
+    wrap.appendChild(chip);
+  }
+
+  function finWriteUrl(readUrl){
+    const idx=readUrl.lastIndexOf('/');
+    return idx===-1?readUrl:readUrl.slice(0,idx+1)+'finance-write';
+  }
+
+  function finRecategorize(t,newCat,data){
+    const prevCat=t.cat,prevColor=t.color;
+    const newCatObj=data.categories.find(c=>c.name===newCat);
+    t.cat=newCat;
+    if(newCatObj)t.color=newCatObj.color;
+    let url='';
+    try{url=localStorage.getItem('pb_fin_webhook')||'';}catch(e){}
+    if(!url||!t.id)return;
+    fetch(finWriteUrl(url),{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'recategorize',txn_id:t.id,category:newCat})})
+      .catch(()=>{t.cat=prevCat;t.color=prevColor;finRender(data);});
   }
 
   function buildSide(data){
