@@ -207,6 +207,49 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-
 .modal-btns button{font-size:11px;padding:4px 12px;border-radius:5px;border:.5px solid var(--bd2);background:var(--sur);color:var(--tx);cursor:pointer;font-family:inherit}
 .modal-btns button.pri{background:var(--tx);color:var(--bg);border-color:var(--tx)}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px}
+
+/* ── POMODORO ── */
+.pom-panel{flex-shrink:0;display:flex;flex-direction:column;overflow:hidden}
+.pom-hd{padding:5px 8px 4px;border-bottom:.5px solid var(--bd);display:flex;align-items:center;gap:4px;flex-shrink:0}
+.pom-label{font-size:10px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em;flex:1;display:flex;align-items:center;gap:3px}
+.pom-tabs{display:flex;gap:2px}
+.pom-tab{font-size:9px;padding:1px 6px;border-radius:4px;border:.5px solid var(--bd);background:transparent;color:var(--tx3);cursor:pointer;font-family:inherit}
+.pom-tab:hover{color:var(--tx);background:var(--sur2)}
+.pom-tab.active{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.pom-body{padding:7px 8px 6px;display:flex;flex-direction:column;align-items:center;gap:5px;border-bottom:.5px solid var(--bd)}
+.pom-display{font-size:38px;font-weight:600;letter-spacing:-1px;font-variant-numeric:tabular-nums;font-family:'JetBrains Mono',monospace;color:var(--tx);line-height:1}
+.pom-display.brk{color:#0F6E56}
+@media(prefers-color-scheme:dark){.pom-display.brk{color:#5DCAA5}}
+.pom-dots{display:flex;gap:4px}
+.pom-dot{width:6px;height:6px;border-radius:50%;background:var(--bd2)}
+.pom-dot.done{background:var(--tx)}
+.pom-ctrls{display:flex;gap:4px;align-items:center}
+.pom-btn{font-size:10px;padding:2px 8px;border-radius:5px;border:.5px solid var(--bd2);background:var(--sur);color:var(--tx);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:2px}
+.pom-btn:hover{background:var(--sur2)}
+.pom-btn.pri{font-size:11px;padding:3px 14px;background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.pom-btn.pri:hover{opacity:.82}
+.pom-cklist{padding:4px;display:flex;flex-direction:column;gap:1px}
+.pom-ci{display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:4px;cursor:pointer;user-select:none}
+.pom-ci:hover{background:var(--sur2)}
+.pom-cbox{width:10px;height:10px;border-radius:2px;border:.5px solid var(--bd2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:7px;color:var(--bg)}
+.pom-cbox.chk{background:var(--tx);border-color:var(--tx)}
+.pom-clbl{font-size:10px;color:var(--tx);flex:1;display:flex;align-items:center;gap:3px}
+.pom-clbl.done{color:var(--tx3);text-decoration:line-through}
+.pom-link{font-size:9px;color:var(--tx3);text-decoration:none;padding:1px 5px;border-radius:3px;border:.5px solid var(--bd);white-space:nowrap}
+.pom-link:hover{color:var(--tx);border-color:var(--bd2);background:var(--sur2)}
+.pom-focus-inp{width:100%;font-size:10px;padding:3px 6px;border-radius:4px;border:.5px solid var(--bd2);background:var(--sur);color:var(--tx);outline:none;font-family:inherit;box-sizing:border-box}
+.pom-focus-inp::placeholder{color:var(--tx3)}
+.pom-focus-inp:focus{border-color:var(--bd2)}
+.pom-slider-row{width:100%;display:flex;align-items:center;gap:6px}
+.pom-slider-row input[type=range]{flex:1;cursor:pointer;accent-color:var(--tx)}
+.pom-slider-row input[type=range]:disabled{opacity:.35;cursor:default}
+.pom-slider-lbl{font-size:10px;font-weight:600;color:var(--tx2);min-width:28px;text-align:right;font-family:'JetBrains Mono',monospace}
+.pom-popup-bg{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:1100;display:flex;align-items:center;justify-content:center}
+.pom-popup-box{background:var(--sur);border:.5px solid var(--bd2);border-radius:var(--rad-lg);padding:20px 22px;min-width:220px;max-width:300px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.pom-popup-icon{font-size:26px;color:var(--tx2)}
+.pom-popup-msg{font-size:12px;font-weight:500;color:var(--tx);line-height:1.5}
+.pom-popup-dismiss{font-size:11px;padding:4px 18px;border-radius:5px;border:.5px solid var(--bd2);background:var(--tx);color:var(--bg);cursor:pointer;font-family:inherit}
+.pom-popup-dismiss:hover{opacity:.82}
 </style>
 </head>
 <body>
@@ -299,6 +342,50 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-
       </div>
       <div class="sticky-body" id="sticky-body"></div>
     </div>
+    <div class="panel pom-panel">
+      <div class="pom-hd">
+        <span class="pom-label"><i class="ti ti-clock" style="font-size:10px"></i> focus timer</span>
+      </div>
+      <div class="pom-body">
+        <input class="pom-focus-inp" id="pom-focus-inp" placeholder="focusing on..." maxlength="50">
+        <div class="pom-slider-row">
+          <input type="range" id="pom-slider" min="5" max="60" step="5" value="25" oninput="pomSliderChange()">
+          <span class="pom-slider-lbl" id="pom-slider-lbl">25m</span>
+        </div>
+        <div class="pom-display" id="pom-disp">25:00</div>
+        <div class="pom-ctrls">
+          <button class="pom-btn" onclick="pomReset()" title="reset"><i class="ti ti-refresh" style="font-size:10px;vertical-align:-1px"></i></button>
+          <button class="pom-btn pri" id="pom-start" onclick="pomToggle()">start</button>
+        </div>
+      </div>
+      <div class="pom-cklist">
+        <div class="pom-ci" onclick="pomCheck(0)">
+          <div class="pom-cbox" id="pom-cb0"></div>
+          <span class="pom-clbl" id="pom-cl0"><i class="ti ti-calendar" style="font-size:10px;color:var(--tx3)"></i> calendar</span>
+        </div>
+        <div class="pom-ci" onclick="pomCheck(1)">
+          <div class="pom-cbox" id="pom-cb1"></div>
+          <span class="pom-clbl" id="pom-cl1"><i class="ti ti-mail" style="font-size:10px;color:var(--tx3)"></i> email</span>
+        </div>
+        <div class="pom-ci" onclick="pomCheck(2)">
+          <div class="pom-cbox" id="pom-cb2"></div>
+          <span class="pom-clbl" id="pom-cl2"><i class="ti ti-brand-linkedin" style="font-size:10px;color:var(--tx3)"></i> linkedin scan</span>
+        </div>
+        <div class="pom-ci" onclick="pomCheck(3)">
+          <div class="pom-cbox chk" id="pom-cb3"><span>✓</span></div>
+          <span class="pom-clbl done" id="pom-cl3"><i class="ti ti-school" style="font-size:10px;color:var(--tx3)"></i> turing</span>
+          <a class="pom-link" href="https://intra.turingcollege.com/hardskills/" target="_blank" onclick="event.stopPropagation()">open ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pom-popup-bg" id="pom-popup" style="display:none" onclick="if(event.target===this)pomPopupClose()">
+  <div class="pom-popup-box">
+    <div class="pom-popup-icon"><i class="ti ti-bell-ringing"></i></div>
+    <div class="pom-popup-msg" id="pom-popup-msg">Time's up!</div>
+    <button class="pom-popup-dismiss" onclick="pomPopupClose()">dismiss</button>
   </div>
 </div>
 
@@ -1010,6 +1097,104 @@ function render(){
 }
 
 window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
+
+/* ─── POMODORO ─── */
+(function(){
+  const CLABELS=['calendar','email','linkedin scan','turing'];
+  let pSecs=25*60,pTotal=25*60,pRunning=false,pInterval=null;
+  const pChecks=[false,false,false,true];
+
+  function pomFmt(s){const m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+  function pomUpd(){const d=document.getElementById('pom-disp');if(d)d.textContent=pomFmt(Math.max(0,pSecs));}
+
+  window.pomSliderChange=function(){
+    if(pRunning)return;
+    const v=parseInt(document.getElementById('pom-slider').value)||25;
+    const lbl=document.getElementById('pom-slider-lbl');if(lbl)lbl.textContent=v+'m';
+    pTotal=v*60;pSecs=pTotal;pomUpd();
+  };
+
+  window.pomToggle=function(){
+    if(pRunning){
+      clearInterval(pInterval);pRunning=false;
+      const sb=document.getElementById('pom-start');if(sb)sb.textContent='resume';
+      const sl=document.getElementById('pom-slider');if(sl)sl.disabled=false;
+    } else {
+      pomRequestNotifPerm();
+      pRunning=true;
+      const sb=document.getElementById('pom-start');if(sb)sb.textContent='pause';
+      const sl=document.getElementById('pom-slider');if(sl)sl.disabled=true;
+      pInterval=setInterval(()=>{pSecs--;pomUpd();if(pSecs<=0){clearInterval(pInterval);pRunning=false;pomDone();}},1000);
+    }
+  };
+
+  window.pomReset=function(){
+    clearInterval(pInterval);pRunning=false;pSecs=pTotal;
+    const sb=document.getElementById('pom-start');if(sb)sb.textContent='start';
+    const sl=document.getElementById('pom-slider');if(sl)sl.disabled=false;
+    pomUpd();
+  };
+
+  function pomGetLabel(){
+    const inp=document.getElementById('pom-focus-inp');
+    if(inp&&inp.value.trim())return inp.value.trim();
+    for(let i=0;i<4;i++){if(pChecks[i])return CLABELS[i];}
+    return null;
+  }
+
+  function pomBell(){
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      /* two-partial bell: fundamental + octave harmonic */
+      [[880,0.55],[1760,0.25]].forEach(([freq,vol])=>{
+        const osc=ctx.createOscillator();const gain=ctx.createGain();
+        osc.connect(gain);gain.connect(ctx.destination);
+        osc.type='sine';osc.frequency.value=freq;
+        gain.gain.setValueAtTime(vol,ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+1.4);
+        osc.start(ctx.currentTime);osc.stop(ctx.currentTime+1.4);
+      });
+    }catch(e){}
+  }
+
+  function pomNotify(msg){
+    if(!('Notification' in window))return;
+    const fire=()=>new Notification('Focus Timer',{body:msg,silent:true});
+    if(Notification.permission==='granted'){fire();}
+    else if(Notification.permission!=='denied'){Notification.requestPermission().then(p=>{if(p==='granted')fire();});}
+  }
+
+  function pomRequestNotifPerm(){
+    if('Notification' in window&&Notification.permission==='default'){
+      Notification.requestPermission();
+    }
+  }
+
+  function pomDone(){
+    pSecs=pTotal;pomUpd();
+    const sl=document.getElementById('pom-slider');if(sl)sl.disabled=false;
+    const sb=document.getElementById('pom-start');if(sb)sb.textContent='start';
+    const lbl=pomGetLabel();
+    const msg=lbl?`Focus time on "${lbl}" has run out`:'Focus time has run out';
+    pomBell();
+    pomNotify(msg);
+    const msgEl=document.getElementById('pom-popup-msg');if(msgEl)msgEl.textContent=msg;
+    const popup=document.getElementById('pom-popup');if(popup)popup.style.display='flex';
+  }
+
+  window.pomPopupClose=function(){
+    const popup=document.getElementById('pom-popup');if(popup)popup.style.display='none';
+  };
+
+  window.pomCheck=function(i){
+    pChecks[i]=!pChecks[i];
+    const cb=document.getElementById('pom-cb'+i);const cl=document.getElementById('pom-cl'+i);
+    if(cb){cb.className='pom-cbox'+(pChecks[i]?' chk':'');cb.innerHTML=pChecks[i]?'<span>✓</span>':'';}
+    if(cl)cl.className='pom-clbl'+(pChecks[i]?' done':'');
+  };
+  pomUpd();
+})();
+
 load();
 </script>
 </body>
