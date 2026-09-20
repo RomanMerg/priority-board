@@ -261,6 +261,49 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-
 .tab-finance .col-right{display:none}
 .view-finance{grid-column:1/-1;grid-row:2;display:none;flex-direction:column;gap:6px;min-height:0}
 .tab-finance .view-finance{display:flex}
+
+/* ── FINANCE TAB ── */
+.fin-summary{display:flex;gap:6px;flex-shrink:0}
+.fin-card{flex:1;background:var(--sur);border:.5px solid var(--bd);border-radius:var(--rad-lg);padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.fin-card-lbl{font-size:9px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em}
+.fin-card-val{font-size:17px;font-weight:600;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;color:var(--tx)}
+.fin-card-val.neg{color:#E24B4A}
+.fin-card-val.pos{color:#0F6E56}
+.fin-cols{flex:1;display:flex;gap:6px;min-height:0}
+.fin-col{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--sur);border:.5px solid var(--bd);border-radius:var(--rad-lg);overflow:hidden}
+.fin-col-hd{padding:5px 8px 4px;border-bottom:.5px solid var(--bd);font-size:10px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:5px;flex-shrink:0}
+.fin-col-body{flex:1;overflow-y:auto;padding:5px;display:flex;flex-direction:column;gap:4px}
+.fin-refresh-btn{margin-left:auto;background:none;border:none;color:var(--tx3);cursor:pointer;font-size:11px;padding:0;line-height:1}
+.fin-refresh-btn:hover{color:var(--tx)}
+.fin-offline{font-size:9px;color:var(--tx3);padding:4px 8px 2px}
+.fin-cat-row{display:flex;flex-direction:column;gap:2px;padding:3px 2px}
+.fin-cat-top{display:flex;justify-content:space-between;align-items:center;font-size:10px}
+.fin-cat-name{display:flex;align-items:center;gap:4px;color:var(--tx)}
+.fin-cat-nums{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx2)}
+.fin-cat-bar-track{height:5px;border-radius:3px;background:var(--sur2);overflow:hidden}
+.fin-cat-bar-fill{height:100%;border-radius:3px}
+.fin-cat-bar-fill.over{background:#E24B4A!important}
+.fin-txn-row{display:flex;align-items:center;gap:6px;font-size:10px;padding:3px 2px;border-bottom:.5px solid var(--bd)}
+.fin-txn-date{font-family:'JetBrains Mono',monospace;color:var(--tx3);font-size:9px;flex-shrink:0;width:32px}
+.fin-txn-desc{flex:1;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fin-txn-cat{font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid;cursor:pointer;flex-shrink:0;white-space:nowrap}
+.fin-txn-cat-sel{font-size:9px;padding:1px 3px;border-radius:5px;border:.5px solid var(--bd2);background:var(--sur);color:var(--tx);font-family:inherit}
+.fin-txn-amt{font-family:'JetBrains Mono',monospace;font-size:10px;font-variant-numeric:tabular-nums;flex-shrink:0;width:56px;text-align:right}
+.fin-txn-amt.neg{color:var(--tx)}
+.fin-txn-amt.pos{color:#0F6E56}
+.fin-rec-row{display:flex;align-items:center;gap:6px;font-size:10px;padding:3px 2px}
+.fin-rec-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.fin-rec-name{flex:1;color:var(--tx)}
+.fin-rec-day{font-size:9px;color:var(--tx3);font-family:'JetBrains Mono',monospace}
+.fin-rec-amt{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx)}
+.fin-rem-row{display:flex;align-items:center;gap:6px;font-size:10px;padding:3px 2px}
+.fin-rem-lbl{flex:1;color:var(--tx)}
+.fin-rem-days{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--tx2)}
+.fin-rem-days.urgent{color:#E24B4A;font-weight:600}
+.fin-rem-amt{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx2)}
+.fin-integ{padding:6px 8px;display:flex;flex-direction:column;gap:5px;border-top:.5px solid var(--bd)}
+.fin-integ label{font-size:9px;color:var(--tx3);display:flex;flex-direction:column;gap:2px}
+.fin-integ input{font-size:10px;padding:3px 6px;border-radius:4px;border:.5px solid var(--bd2);background:var(--sur);color:var(--tx);outline:none;font-family:inherit;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -1224,6 +1267,153 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
     if(cl)cl.className='pom-clbl'+(pChecks[i]?' done':'');
   };
   pomUpd();
+})();
+
+/* ─── FINANCE TAB ─── */
+(function(){
+  const SAMPLE={
+    month:'Sep 2026', spent:1247.8, income:2100.0,
+    balance:3450.2, budget:2040.0, uncategorized:3,
+    synced_at:'2026-09-19T05:15:22Z',
+    categories:[
+      {name:'Food',spent:312.4,budget:400,pct:78,color:'#0F6E56',icon:'shopping-cart'},
+      {name:'Transport',spent:96.0,budget:150,pct:64,color:'#534AB7',icon:'car'},
+      {name:'Bills',spent:620.0,budget:600,pct:103,color:'#EF9F27',icon:'receipt'},
+      {name:'Other',spent:219.4,budget:300,pct:73,color:'#6b6960',icon:'dots'}
+    ],
+    transactions:[
+      {id:'sample-1',date:'19/09',desc:'MAXIMA',cat:'Food',color:'#0F6E56',amount:-23.4,by:'rule'},
+      {id:'sample-2',date:'18/09',desc:'Salary',cat:'Income',color:'#0F6E56',amount:1200.0,by:'rule'},
+      {id:'sample-3',date:'17/09',desc:'Swedbank fee',cat:'Bills',color:'#EF9F27',amount:-3.5,by:'rule'},
+      {id:'sample-4',date:'16/09',desc:'Unknown merchant',cat:'Uncategorized',color:'#a09e96',amount:-14.2,by:'none'}
+    ],
+    recurring:[
+      {name:'Rent',amount:800,day:1,paid:true,color:'#534AB7'},
+      {name:'Netflix',amount:12.99,day:5,paid:true,color:'#E24B4A'},
+      {name:'Gym',amount:29.0,day:10,paid:false,color:'#0F6E56'}
+    ],
+    reminders:[
+      {label:'Car insurance',due:'2026-09-24',amount:180,days:5,urgent:false},
+      {label:'Internet bill',due:'2026-09-21',amount:35,days:2,urgent:true}
+    ]
+  };
+  let finData=SAMPLE;
+  let shown=false;
+
+  function fmtAmt(n){return(n<0?'-':'+')+Math.abs(n).toFixed(2);}
+  function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;}
+
+  function buildSummary(data){
+    const wrap=el('div','fin-summary');
+    const savings=data.income>0?Math.round((data.income-data.spent)/data.income*100):0;
+    const cards=[
+      {lbl:'spent',val:data.spent.toFixed(2),cls:'neg'},
+      {lbl:'income',val:data.income.toFixed(2),cls:'pos'},
+      {lbl:'balance',val:data.balance.toFixed(2),cls:''},
+      {lbl:'savings rate',val:savings+'%',cls:savings>=0?'pos':'neg'}
+    ];
+    cards.forEach(c=>{
+      const card=el('div','fin-card');
+      card.appendChild(el('div','fin-card-lbl',c.lbl));
+      card.appendChild(el('div','fin-card-val'+(c.cls?' '+c.cls:''),c.val));
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function buildCategories(data){
+    const col=el('div','fin-col');
+    const hd=el('div','fin-col-hd');
+    hd.appendChild(el('span',null,'categories'));
+    col.appendChild(hd);
+    const body=el('div','fin-col-body');
+    data.categories.forEach(c=>{
+      const row=el('div','fin-cat-row');
+      const top=el('div','fin-cat-top');
+      const name=el('span','fin-cat-name');
+      const ic=document.createElement('i');ic.className='ti ti-'+c.icon;ic.style.cssText='font-size:10px;color:'+c.color;
+      name.appendChild(ic);
+      name.appendChild(document.createTextNode(c.name));
+      top.appendChild(name);
+      top.appendChild(el('span','fin-cat-nums',c.spent.toFixed(2)+' / '+c.budget.toFixed(2)));
+      row.appendChild(top);
+      const track=el('div','fin-cat-bar-track');
+      const fill=el('div','fin-cat-bar-fill'+(c.pct>100?' over':''));
+      fill.style.width=Math.min(c.pct,100)+'%';
+      if(c.pct<=100)fill.style.background=c.color;
+      track.appendChild(fill);
+      row.appendChild(track);
+      body.appendChild(row);
+    });
+    col.appendChild(body);
+    return col;
+  }
+
+  function buildTransactions(data){
+    const col=el('div','fin-col');
+    const hd=el('div','fin-col-hd');
+    hd.appendChild(el('span',null,'transactions'));
+    if(data.uncategorized>0)hd.appendChild(el('span','fin-cat-nums',data.uncategorized+' uncat'));
+    col.appendChild(hd);
+    const body=el('div','fin-col-body');
+    data.transactions.forEach(t=>{
+      const row=el('div','fin-txn-row');
+      row.appendChild(el('span','fin-txn-date',t.date));
+      row.appendChild(el('span','fin-txn-desc',t.desc));
+      const chip=el('span','fin-txn-cat',t.cat);
+      chip.style.cssText='border-color:'+t.color+';color:'+t.color;
+      row.appendChild(chip);
+      row.appendChild(el('span','fin-txn-amt '+(t.amount<0?'neg':'pos'),fmtAmt(t.amount)));
+      body.appendChild(row);
+    });
+    col.appendChild(body);
+    return col;
+  }
+
+  function buildSide(data){
+    const col=el('div','fin-col');
+    const hd=el('div','fin-col-hd');
+    hd.appendChild(el('span',null,'recurring'));
+    col.appendChild(hd);
+    const body=el('div','fin-col-body');
+    data.recurring.forEach(r=>{
+      const row=el('div','fin-rec-row');
+      const dot=el('span','fin-rec-dot');dot.style.background=r.color;
+      row.appendChild(dot);
+      row.appendChild(el('span','fin-rec-name',r.name));
+      row.appendChild(el('span','fin-rec-day','day '+r.day));
+      const amt=el('span','fin-rec-amt',r.amount.toFixed(2));
+      amt.style.opacity=r.paid?'1':'.5';
+      row.appendChild(amt);
+      body.appendChild(row);
+    });
+    body.appendChild(el('div','fin-col-hd','reminders'));
+    data.reminders.forEach(r=>{
+      const row=el('div','fin-rem-row');
+      row.appendChild(el('span','fin-rem-lbl',r.label));
+      row.appendChild(el('span','fin-rem-days'+(r.urgent?' urgent':''),r.days+'d'));
+      row.appendChild(el('span','fin-rem-amt',r.amount.toFixed(2)));
+      body.appendChild(row);
+    });
+    col.appendChild(body);
+    return col;
+  }
+
+  function finRender(data){
+    finData=data;
+    const mount=document.getElementById('view-finance');
+    if(!mount)return;
+    mount.innerHTML='';
+    mount.appendChild(buildSummary(data));
+    const cols=el('div','fin-cols');
+    cols.appendChild(buildCategories(data));
+    cols.appendChild(buildTransactions(data));
+    cols.appendChild(buildSide(data));
+    mount.appendChild(cols);
+  }
+
+  window.finRender=finRender;
+  window.finOnShow=function(){finRender(finData);};
 })();
 
 load();
