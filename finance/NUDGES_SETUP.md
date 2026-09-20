@@ -46,6 +46,12 @@ something silently doesn't fire:
   updates; separately, open the board in an actual browser (not curl) and confirm a
   recategorize or a daily-list edit actually reaches n8n via the Network tab, since
   curl has no CORS and can't surface the preflight risk above.
+- **`Worth pinging?`'s `outputKey`s** (`digest`/`remind_to_plan`) are set without
+  `renameOutput: true`, which is normally what activates named-output labels in a
+  Switch v3.2 node — cosmetic only, since `connections` wires by positional index
+  (rule 0 → `Send Digest`, rule 1 → `Send Plan Reminder`) and that ordering matches
+  the rules as written either way. Worth a glance in the n8n editor after import to
+  confirm the branch labels display as expected, not because routing is at risk.
 
 ## Behavior recap
 
@@ -53,5 +59,6 @@ something silently doesn't fire:
 - Silence when everything's done. The 13:00/17:00 slots can only ever produce the
   digest branch or silence — the "haven't planned" reminder is only evaluated at the
   09:00 slot, there is no send-tracking involved.
-- "You haven't planned today yet" only at the 09:00 slot, only if nothing was
-  synced today.
+- "You haven't planned today yet" only at the 09:00 slot, and only if nothing was
+  synced today *or* today's list is empty — opening the board alone stamps a sync,
+  so an empty list still counts as "not planned."
