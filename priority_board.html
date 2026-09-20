@@ -1433,7 +1433,50 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
       body.appendChild(row);
     });
     col.appendChild(body);
+    col.appendChild(buildIntegrations());
     return col;
+  }
+
+  function buildIntegrations(){
+    const wrap=el('div','fin-integ');
+    const hd=el('div','fin-col-hd');
+    hd.appendChild(el('span',null,'integrations'));
+    const refreshBtn=el('button','fin-refresh-btn');
+    refreshBtn.innerHTML='<i class="ti ti-refresh" style="font-size:11px"></i>';
+    refreshBtn.title='refresh finance data';
+    refreshBtn.onclick=finFetch;
+    hd.appendChild(refreshBtn);
+    wrap.appendChild(hd);
+
+    const finLbl=el('label',null,'Finance data URL');
+    const finInp=document.createElement('input');
+    finInp.type='text';finInp.placeholder='http://localhost:5678/webhook/finance-data';
+    try{finInp.value=localStorage.getItem('pb_fin_webhook')||'';}catch(e){}
+    finInp.onchange=()=>{try{localStorage.setItem('pb_fin_webhook',finInp.value.trim());}catch(e){}finFetch();};
+    finLbl.appendChild(finInp);
+    wrap.appendChild(finLbl);
+
+    const taskLbl=el('label',null,'Tasks sync URL');
+    const taskInp=document.createElement('input');
+    taskInp.type='text';taskInp.placeholder='http://localhost:5678/webhook/tasks-sync';
+    try{taskInp.value=localStorage.getItem('pb_tasks_webhook')||'';}catch(e){}
+    taskInp.onchange=()=>{try{localStorage.setItem('pb_tasks_webhook',taskInp.value.trim());}catch(e){}};
+    taskLbl.appendChild(taskInp);
+    wrap.appendChild(taskLbl);
+
+    wrap.appendChild(el('div','fin-offline',''));
+    wrap.lastChild.id='fin-offline-note';
+    return wrap;
+  }
+
+  function finFetch(){
+    let url='';
+    try{url=localStorage.getItem('pb_fin_webhook')||'';}catch(e){}
+    const note=document.getElementById('fin-offline-note');
+    if(!url){if(note)note.textContent='offline · sample data';return;}
+    fetch(url).then(r=>{if(!r.ok)throw new Error('bad status');return r.json();})
+      .then(data=>{finRender(data);const n=document.getElementById('fin-offline-note');if(n)n.textContent='';})
+      .catch(()=>{if(note)note.textContent='offline · sample data';});
   }
 
   function finRender(data){
@@ -1451,6 +1494,10 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
 
   finRender(SAMPLE);
   window.finRender=finRender;
+  window.finOnShow=function(){
+    if(!shown){finRender(finData);shown=true;}
+    finFetch();
+  };
 })();
 
 load();
