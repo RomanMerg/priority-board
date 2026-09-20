@@ -1442,7 +1442,7 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
     const hd=el('div','fin-col-hd');
     hd.appendChild(el('span',null,'integrations'));
     const refreshBtn=el('button','fin-refresh-btn');
-    refreshBtn.innerHTML='<i class="ti ti-refresh" style="font-size:11px"></i>';
+    const refreshIcon=document.createElement('i');refreshIcon.className='ti ti-refresh';refreshIcon.style.fontSize='11px';refreshBtn.appendChild(refreshIcon);
     refreshBtn.title='refresh finance data';
     refreshBtn.onclick=finFetch;
     hd.appendChild(refreshBtn);
