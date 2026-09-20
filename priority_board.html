@@ -934,6 +934,7 @@ function renderSection(st){
 function renderDaily(){
   const inner=document.getElementById('daily-inner');inner.innerHTML='';
   const daily=tasks.filter(t=>t.inDaily);
+  if(window.pbTasksSyncPing)window.pbTasksSyncPing();
   if(!daily.length){const h=document.createElement('div');h.className='daily-hint';h.textContent='drag tasks here for today';inner.appendChild(h);return;}
   daily.forEach(t=>{
     const sc=sevColors(t);const chip=document.createElement('div');chip.className='dchip'+(t.dailyDone?' done':'');chip.style.cssText=`background:${sc.bg};border-color:${sc.bd};color:${sc.tx}`;
@@ -1497,6 +1498,22 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
   window.finOnShow=function(){
     if(!shown){finRender(finData);shown=true;}
     finFetch();
+  };
+})();
+
+/* ─── TASKS SYNC (nudges) ─── */
+(function(){
+  let syncTimer=null;
+  function doSync(){
+    let url='';
+    try{url=localStorage.getItem('pb_tasks_webhook')||'';}catch(e){}
+    if(!url)return;
+    const daily=tasks.filter(t=>t.inDaily).map(t=>({num:t.num,label:t.label,severity:t.severity,due:t.due,dailyDone:t.dailyDone}));
+    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks:daily})}).catch(()=>{});
+  }
+  window.pbTasksSyncPing=function(){
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(doSync,2000);
   };
 })();
 
