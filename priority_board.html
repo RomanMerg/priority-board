@@ -1521,8 +1521,8 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
   function doSync(){
     const url=webhookBase();
     if(!url)return;
-    // Kanban "done" clears inDaily, so also send recently finished ref'd tasks (as dailyDone) for the evening recap.
-    const since=Date.now()-24*60*60*1000;
+    // Kanban "done" clears inDaily, so also send ref'd tasks finished today (as dailyDone) for the evening recap.
+    const since=new Date().setHours(0,0,0,0);
     const isRecentDone=t=>!!t.ref&&t.status==='done'&&(t.updatedAt||0)>=since;
     const daily=tasks.filter(t=>t.inDaily||isRecentDone(t)).map(t=>({num:t.num,label:t.label,severity:t.severity,due:t.due,dailyDone:t.inDaily?t.dailyDone:true,ref:t.ref||null,source:t.source||null}));
     fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks:daily})}).catch(e=>{console.warn('[pb] tasks sync failed',e);});
