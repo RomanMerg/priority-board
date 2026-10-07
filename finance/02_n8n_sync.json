@@ -1,0 +1,333 @@
+{
+  "name": "Finance · Daily Swedbank Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "15 5 * * *" } ] }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Daily 05:15",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://bankaccountdata.gocardless.com/api/v2/token/new/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ secret_id: $vars.GC_SECRET_ID, secret_key: $vars.GC_SECRET_KEY }) }}",
+        "options": { "response": { "response": { "neverError": false } } }
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "GC Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-440, 0],
+      "notes": "Access token is valid 24h. Cheaper to mint fresh each run than to store it."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, label, consent_expires FROM fin.accounts WHERE active;",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Active Accounts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-240, 0],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": { "options": { "reset": false } },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Loop Accounts",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://bankaccountdata.gocardless.com/api/v2/accounts/{{ $json.id }}/transactions/",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [
+          { "name": "date_from", "value": "={{ $now.minus({ days: 10 }).toFormat('yyyy-MM-dd') }}" }
+        ] },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{ $('GC Token').first().json.access }}" }
+        ] },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Fetch Transactions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [180, 100],
+      "notes": "10-day lookback window. Overlap is free because the upsert is idempotent on transactionId, and it self-heals any missed run."
+    },
+    {
+      "parameters": {
+        "url": "=https://bankaccountdata.gocardless.com/api/v2/accounts/{{ $('Loop Accounts').item.json.id }}/balances/",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{ $('GC Token').first().json.access }}" }
+        ] },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Fetch Balance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten GoCardless -> flat rows ready for upsert.\nconst acct = $('Loop Accounts').item.json;\nconst resp = $('Fetch Transactions').first().json;\nconst booked = resp?.transactions?.booked ?? [];\n\n// balance: prefer interimAvailable, else first entry\nconst bals = $('Fetch Balance').first().json?.balances ?? [];\nconst pick = bals.find(b => b.balanceType === 'interimAvailable') || bals[0];\nconst balance = pick ? parseFloat(pick.balanceAmount.amount) : null;\n\nconst rows = booked.map(t => {\n  const amount = parseFloat(t.transactionAmount.amount);\n  const cp = t.creditorName || t.debtorName || '';\n  const descr = t.remittanceInformationUnstructured\n    || (Array.isArray(t.remittanceInformationUnstructuredArray)\n        ? t.remittanceInformationUnstructuredArray.join(' ') : '')\n    || '';\n  // own-account transfers must not count as spend\n  const hay = (cp + ' ' + descr).toLowerCase();\n  const isInternal = /savings|santaupos|own transfer|vidinis|between accounts/.test(hay);\n  return {\n    id: t.transactionId || t.internalTransactionId\n        || `${acct.id}-${t.bookingDate}-${t.transactionAmount.amount}`,\n    account_id: acct.id,\n    booked_on: t.bookingDate || t.valueDate,\n    amount,\n    currency: t.transactionAmount.currency || 'EUR',\n    counterparty: cp.slice(0, 200),\n    description: descr.slice(0, 500),\n    is_internal: isInternal,\n    raw: JSON.stringify(t),\n    _balance: balance\n  };\n});\n\nif (!rows.length) return [{ json: { _empty: true, account_id: acct.id, _balance: balance } }];\nreturn rows.map(json => ({ json }));"
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fin.transactions\n  (id, account_id, booked_on, amount, currency, counterparty, description, is_internal, raw)\nVALUES\n  ($1, $2, $3::date, $4::numeric, $5, $6, $7, $8::boolean, $9::jsonb)\nON CONFLICT (id) DO NOTHING\nRETURNING id;",
+        "options": { "queryReplacement": "={{ $json.id }},{{ $json.account_id }},{{ $json.booked_on }},{{ $json.amount }},{{ $json.currency }},{{ $json.counterparty }},{{ $json.description }},{{ $json.is_internal }},{{ $json.raw }}" }
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Upsert Txn",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [780, 100],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } },
+      "notes": "ON CONFLICT DO NOTHING = idempotency. RETURNING tells us which rows are genuinely new."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fin.accounts\n   SET balance = NULLIF($1,'')::numeric,\n       balance_at = now(),\n       last_synced = now()\n WHERE id = $2;",
+        "options": { "queryReplacement": "={{ $('Normalize').first().json._balance }},{{ $('Loop Accounts').item.json.id }}" }
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Update Balance",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [980, 100],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Layer 1: deterministic rules. Runs first, costs nothing.\nWITH matched AS (\n  SELECT DISTINCT ON (t.id) t.id AS txn_id, r.id AS rule_id, r.category_id\n    FROM fin.transactions t\n    JOIN fin.rules r\n      ON (t.counterparty ILIKE r.pattern OR t.description ILIKE r.pattern)\n   WHERE t.category_id IS NULL\n   ORDER BY t.id, r.priority ASC\n)\nUPDATE fin.transactions t\n   SET category_id = m.category_id, categorized_by = 'rule', confidence = 1.00\n  FROM matched m\n WHERE t.id = m.txn_id\nRETURNING t.id;",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Categorize · Rules",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-440, 320],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.id, t.counterparty, t.description, t.amount\n  FROM fin.transactions t\n WHERE t.category_id IS NULL AND NOT t.is_internal\n LIMIT 25;",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000011",
+      "name": "Still Uncategorized",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-240, 320],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "leftValue": "" },
+          "combinator": "and",
+          "conditions": [ {
+            "id": "c1",
+            "operator": { "type": "number", "operation": "gt" },
+            "leftValue": "={{ $items().length }}",
+            "rightValue": 0
+          } ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000012",
+      "name": "Any left?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-40, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'qwen3.5:9b',\n  stream: false,\n  format: 'json',\n  options: { temperature: 0 },\n  prompt: `Classify this bank transaction into exactly one category.\\nCategories: Housing, Food, Transport, Utilities, Subscriptions, Health, Leisure, Kid, Other, Income\\n\\nMerchant: ${$json.counterparty || 'unknown'}\\nDescription: ${$json.description || 'none'}\\nAmount: ${$json.amount} EUR (negative = money out)\\n\\nRespond with JSON only: {\"category\":\"<one of the list>\",\"confidence\":<0.0-1.0>}`\n}) }}",
+        "options": { "timeout": 60000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "a1000000-0000-4000-8000-000000000013",
+      "name": "Ollama Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [180, 320],
+      "notes": "host.docker.internal reaches Ollama on the Windows host from inside the n8n container. temperature 0 + format:json keeps it parseable."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Ollama's JSON, clamp to the known category set.\nconst VALID = ['Housing','Food','Transport','Utilities','Subscriptions','Health','Leisure','Kid','Other','Income'];\nconst out = [];\nfor (const item of $input.all()) {\n  const txn = $('Ollama Classify').all().indexOf(item) >= 0 ? item : item;\n  let cat = 'Other', conf = 0;\n  try {\n    const parsed = JSON.parse(item.json.response ?? '{}');\n    if (VALID.includes(parsed.category)) { cat = parsed.category; conf = Number(parsed.confidence) || 0.5; }\n  } catch (e) { /* fall through to Other */ }\n  out.push({ json: { txn_id: item.json._txn_id ?? null, category: cat, confidence: Math.min(1, Math.max(0, conf)) } });\n}\nreturn out;"
+      },
+      "id": "a1000000-0000-4000-8000-000000000014",
+      "name": "Parse LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [380, 320],
+      "notes": "IMPORTANT for handoff: pair each Ollama response back to its txn id. Simplest fix is to carry _txn_id through the HTTP node via a Set node before Ollama Classify."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fin.transactions\n   SET category_id = (SELECT id FROM fin.categories WHERE name = $2),\n       categorized_by = 'llm',\n       confidence = $3::numeric\n WHERE id = $1;",
+        "options": { "queryReplacement": "={{ $json.txn_id }},{{ $json.category }},{{ $json.confidence }}" }
+      },
+      "id": "a1000000-0000-4000-8000-000000000015",
+      "name": "Apply LLM Category",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [580, 320],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Promote confident, repeated LLM guesses into deterministic rules.\n-- After a few weeks Ollama stops being called for everyday merchants.\nINSERT INTO fin.rules (pattern, category_id, priority, created_by)\nSELECT '%' || lower(trim(t.counterparty)) || '%', t.category_id, 50, 'llm_promoted'\n  FROM fin.transactions t\n WHERE t.categorized_by = 'llm' AND t.confidence >= 0.8\n   AND length(trim(coalesce(t.counterparty,''))) > 3\n GROUP BY lower(trim(t.counterparty)), t.counterparty, t.category_id\nHAVING count(*) >= 3\n   AND NOT EXISTS (\n     SELECT 1 FROM fin.rules r\n      WHERE r.pattern = '%' || lower(trim(t.counterparty)) || '%'\n   );",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000016",
+      "name": "Promote Rules",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [780, 320],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } },
+      "notes": "Self-improving loop: the LLM bill shrinks over time instead of growing."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT string_agg(format('%s %s/%s EUR (%s%%)', name, round(spent), round(budget), pct), E'\\n')\n     FROM fin.v_month_by_category WHERE pct >= 85)                       AS over_budget,\n  (SELECT string_agg(format('%s due in %s d (%s EUR)', label, days_left, coalesce(amount::text,'?')), E'\\n')\n     FROM fin.v_reminders_open WHERE urgent)                             AS due_soon,\n  (SELECT count(*) FROM fin.transactions WHERE category_id IS NULL)      AS uncat,\n  (SELECT round(spent) FROM fin.v_month_summary)                         AS spent,\n  (SELECT round(budget_total) FROM fin.v_month_summary)                  AS budget;",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000017",
+      "name": "Build Digest",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [980, 320],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "leftValue": "" },
+          "combinator": "or",
+          "conditions": [
+            { "id": "d1", "operator": { "type": "string", "operation": "notEmpty" }, "leftValue": "={{ $json.over_budget }}", "rightValue": "" },
+            { "id": "d2", "operator": { "type": "string", "operation": "notEmpty" }, "leftValue": "={{ $json.due_soon }}", "rightValue": "" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000018",
+      "name": "Worth pinging?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1180, 320],
+      "notes": "Silence when nothing is wrong. A bot that messages you every single day gets muted within a week."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.TG_CHAT_ID }}",
+        "text": "=*Finance · {{ $now.toFormat('dd LLL') }}*\nSpent {{ $json.spent }} / {{ $json.budget }} EUR this month\n{{ $json.over_budget ? '\\n*Near or over budget*\\n' + $json.over_budget : '' }}{{ $json.due_soon ? '\\n\\n*Due soon*\\n' + $json.due_soon : '' }}{{ $json.uncat > 0 ? '\\n\\n' + $json.uncat + ' uncategorized' : '' }}",
+        "additionalFields": { "parse_mode": "Markdown", "appendAttribution": false }
+      },
+      "id": "a1000000-0000-4000-8000-000000000019",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1380, 320],
+      "credentials": { "telegramApi": { "id": "TG_BOT", "name": "Telegram bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fin.sync_log (account_id, fetched, inserted, ok)\nVALUES ($1, $2::int, $3::int, TRUE);",
+        "options": { "queryReplacement": "={{ $('Loop Accounts').item.json.id }},{{ $('Normalize').all().length }},{{ $('Upsert Txn').all().filter(i => i.json.id).length }}" }
+      },
+      "id": "a1000000-0000-4000-8000-000000000020",
+      "name": "Log Sync",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1180, 100],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT label, consent_expires, (consent_expires - CURRENT_DATE) AS days\n  FROM fin.accounts\n WHERE active AND consent_expires IS NOT NULL\n   AND consent_expires - CURRENT_DATE <= 7;",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000021",
+      "name": "Consent Expiring?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1380, 100],
+      "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } },
+      "notes": "PSD2 consent dies after 90 days and the sync silently returns nothing. This is the single most likely way the pipeline breaks. Warn a week ahead."
+    }
+  ],
+  "connections": {
+    "Daily 05:15":          { "main": [ [ { "node": "GC Token", "type": "main", "index": 0 } ] ] },
+    "GC Token":             { "main": [ [ { "node": "Active Accounts", "type": "main", "index": 0 } ] ] },
+    "Active Accounts":      { "main": [ [ { "node": "Loop Accounts", "type": "main", "index": 0 } ] ] },
+    "Loop Accounts":        { "main": [
+                                [ { "node": "Categorize · Rules", "type": "main", "index": 0 } ],
+                                [ { "node": "Fetch Transactions", "type": "main", "index": 0 } ]
+                              ] },
+    "Fetch Transactions":   { "main": [ [ { "node": "Fetch Balance", "type": "main", "index": 0 } ] ] },
+    "Fetch Balance":        { "main": [ [ { "node": "Normalize", "type": "main", "index": 0 } ] ] },
+    "Normalize":            { "main": [ [ { "node": "Upsert Txn", "type": "main", "index": 0 } ] ] },
+    "Upsert Txn":           { "main": [ [ { "node": "Update Balance", "type": "main", "index": 0 } ] ] },
+    "Update Balance":       { "main": [ [ { "node": "Log Sync", "type": "main", "index": 0 } ] ] },
+    "Log Sync":             { "main": [ [ { "node": "Consent Expiring?", "type": "main", "index": 0 } ] ] },
+    "Consent Expiring?":    { "main": [ [ { "node": "Loop Accounts", "type": "main", "index": 0 } ] ] },
+    "Categorize · Rules":   { "main": [ [ { "node": "Still Uncategorized", "type": "main", "index": 0 } ] ] },
+    "Still Uncategorized":  { "main": [ [ { "node": "Any left?", "type": "main", "index": 0 } ] ] },
+    "Any left?":            { "main": [
+                                [ { "node": "Ollama Classify", "type": "main", "index": 0 } ],
+                                [ { "node": "Build Digest", "type": "main", "index": 0 } ]
+                              ] },
+    "Ollama Classify":      { "main": [ [ { "node": "Parse LLM", "type": "main", "index": 0 } ] ] },
+    "Parse LLM":            { "main": [ [ { "node": "Apply LLM Category", "type": "main", "index": 0 } ] ] },
+    "Apply LLM Category":   { "main": [ [ { "node": "Promote Rules", "type": "main", "index": 0 } ] ] },
+    "Promote Rules":        { "main": [ [ { "node": "Build Digest", "type": "main", "index": 0 } ] ] },
+    "Build Digest":         { "main": [ [ { "node": "Worth pinging?", "type": "main", "index": 0 } ] ] },
+    "Worth pinging?":       { "main": [ [ { "node": "Telegram Alert", "type": "main", "index": 0 } ], [] ] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "timezone": "Europe/Vilnius" },
+  "active": false,
+  "pinData": {},
+  "meta": { "instanceId": "priority-board-finance" },
+  "tags": [ { "name": "finance" } ]
+}

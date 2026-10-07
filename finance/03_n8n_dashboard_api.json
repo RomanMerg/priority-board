@@ -1,0 +1,159 @@
+{
+  "name": "Finance · Dashboard API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "finance-data",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000001",
+      "name": "GET /finance-data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-400, 0],
+      "webhookId": "finance-data",
+      "notes": "Final URL: http://localhost:5678/webhook/finance-data — this is what you paste into the dashboard's webhook field."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- One round trip. Every panel the dashboard renders, as a single JSON object.\nSELECT json_build_object(\n  'month',     (SELECT month FROM fin.v_month_summary),\n  'spent',     (SELECT spent::float8 FROM fin.v_month_summary),\n  'income',    (SELECT income::float8 FROM fin.v_month_summary),\n  'balance',   (SELECT balance::float8 FROM fin.v_month_summary),\n  'budget',    (SELECT budget_total::float8 FROM fin.v_month_summary),\n  'uncategorized', (SELECT uncategorized FROM fin.v_month_summary),\n  'synced_at', (SELECT max(last_synced) FROM fin.accounts),\n  'categories', COALESCE((\n     SELECT json_agg(json_build_object(\n       'name', name, 'spent', spent::float8,\n       'budget', budget::float8, 'pct', pct, 'color', trim(color), 'icon', icon))\n     FROM fin.v_month_by_category), '[]'::json),\n  'transactions', COALESCE((\n     SELECT json_agg(json_build_object(\n       'id', id, 'date', date, 'desc', descr, 'cat', category,\n       'color', trim(color), 'amount', amount::float8, 'by', categorized_by))\n     FROM fin.v_recent_txn), '[]'::json),\n  'recurring', COALESCE((\n     SELECT json_agg(json_build_object(\n       'name', name, 'amount', amount::float8,\n       'day', due_day, 'paid', paid, 'color', trim(color)))\n     FROM fin.v_recurring_status), '[]'::json),\n  'reminders', COALESCE((\n     SELECT json_agg(json_build_object(\n       'label', label, 'due', due_on, 'amount', amount::float8,\n       'days', days_left, 'urgent', urgent))\n     FROM fin.v_reminders_open), '[]'::json)\n) AS payload;",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000002",
+      "name": "Query All Panels",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-180, 0],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.payload) }}",
+        "options": { "responseHeaders": { "entries": [
+          { "name": "Access-Control-Allow-Origin", "value": "*" },
+          { "name": "Cache-Control", "value": "no-store" }
+        ] } }
+      },
+      "id": "b2000000-0000-4000-8000-000000000003",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [40, 0],
+      "notes": "CORS header is required: the dashboard is opened as file:// so its origin is null."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "finance-write",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000004",
+      "name": "POST /finance-write",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-400, 260],
+      "webhookId": "finance-write",
+      "notes": "Write-back channel so the dashboard can recategorize a txn, tick a reminder, or add one — instead of every correction needing a psql session."
+    },
+    {
+      "parameters": {
+        "rules": { "values": [
+          { "conditions": { "options": { "version": 2, "caseSensitive": true, "leftValue": "" }, "combinator": "and",
+            "conditions": [ { "id": "s1", "operator": { "type": "string", "operation": "equals" },
+              "leftValue": "={{ $json.body.action }}", "rightValue": "recategorize" } ] },
+            "outputKey": "recategorize" },
+          { "conditions": { "options": { "version": 2, "caseSensitive": true, "leftValue": "" }, "combinator": "and",
+            "conditions": [ { "id": "s2", "operator": { "type": "string", "operation": "equals" },
+              "leftValue": "={{ $json.body.action }}", "rightValue": "reminder_add" } ] },
+            "outputKey": "reminder_add" },
+          { "conditions": { "options": { "version": 2, "caseSensitive": true, "leftValue": "" }, "combinator": "and",
+            "conditions": [ { "id": "s3", "operator": { "type": "string", "operation": "equals" },
+              "leftValue": "={{ $json.body.action }}", "rightValue": "reminder_toggle" } ] },
+            "outputKey": "reminder_toggle" }
+        ] },
+        "options": { "fallbackOutput": "none" }
+      },
+      "id": "b2000000-0000-4000-8000-000000000005",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-180, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Manual correction wins forever, and teaches a rule for next time.\nUPDATE fin.transactions\n   SET category_id = (SELECT id FROM fin.categories WHERE name = $2),\n       categorized_by = 'manual', confidence = 1.00\n WHERE id = $1;\n\nINSERT INTO fin.rules (pattern, category_id, priority, created_by)\nSELECT '%' || lower(trim(counterparty)) || '%',\n       (SELECT id FROM fin.categories WHERE name = $2), 20, 'manual'\n  FROM fin.transactions\n WHERE id = $1 AND length(trim(coalesce(counterparty,''))) > 3\nON CONFLICT DO NOTHING;",
+        "options": { "queryReplacement": "={{ $json.body.txn_id }},{{ $json.body.category }}" }
+      },
+      "id": "b2000000-0000-4000-8000-000000000006",
+      "name": "Recategorize",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [60, 160],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fin.reminders (label, due_on, amount, notify_days)\nVALUES ($1, $2::date, NULLIF($3,'')::numeric, COALESCE(NULLIF($4,'')::smallint, 3))\nRETURNING id;",
+        "options": { "queryReplacement": "={{ $json.body.label }},{{ $json.body.due }},{{ $json.body.amount || '' }},{{ $json.body.notify_days || '' }}" }
+      },
+      "id": "b2000000-0000-4000-8000-000000000007",
+      "name": "Add Reminder",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [60, 300],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fin.reminders SET done = NOT done WHERE id = $1::int RETURNING id, done;",
+        "options": { "queryReplacement": "={{ $json.body.id }}" }
+      },
+      "id": "b2000000-0000-4000-8000-000000000008",
+      "name": "Toggle Reminder",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [60, 440],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": { "responseHeaders": { "entries": [
+          { "name": "Access-Control-Allow-Origin", "value": "*" }
+        ] } }
+      },
+      "id": "b2000000-0000-4000-8000-000000000009",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, 300]
+    }
+  ],
+  "connections": {
+    "GET /finance-data":    { "main": [ [ { "node": "Query All Panels", "type": "main", "index": 0 } ] ] },
+    "Query All Panels":     { "main": [ [ { "node": "Respond", "type": "main", "index": 0 } ] ] },
+    "POST /finance-write":  { "main": [ [ { "node": "Route Action", "type": "main", "index": 0 } ] ] },
+    "Route Action":         { "main": [
+                                [ { "node": "Recategorize", "type": "main", "index": 0 } ],
+                                [ { "node": "Add Reminder", "type": "main", "index": 0 } ],
+                                [ { "node": "Toggle Reminder", "type": "main", "index": 0 } ]
+                              ] },
+    "Recategorize":         { "main": [ [ { "node": "Respond OK", "type": "main", "index": 0 } ] ] },
+    "Add Reminder":         { "main": [ [ { "node": "Respond OK", "type": "main", "index": 0 } ] ] },
+    "Toggle Reminder":      { "main": [ [ { "node": "Respond OK", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Europe/Vilnius" },
+  "active": false,
+  "pinData": {},
+  "meta": { "instanceId": "priority-board-finance" },
+  "tags": [ { "name": "finance" } ]
+}

@@ -1,0 +1,57 @@
+{
+  "name": "Priority Board · Tasks Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tasks-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "POST /tasks-sync",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-400, 0],
+      "webhookId": "tasks-sync",
+      "notes": "Final URL: http://localhost:5678/webhook/tasks-sync — paste into the board's Tasks sync URL field."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pb.daily_snapshot (id, tasks, synced_at)\nVALUES (1, $1::jsonb, now())\nON CONFLICT (id) DO UPDATE SET tasks = EXCLUDED.tasks, synced_at = EXCLUDED.synced_at;",
+        "options": { "queryReplacement": "={{ JSON.stringify($json.body.tasks) }}" }
+      },
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Upsert Snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-180, 0],
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": { "responseHeaders": { "entries": [
+          { "name": "Access-Control-Allow-Origin", "value": "*" }
+        ] } }
+      },
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [40, 0],
+      "notes": "CORS header is required: the board is opened as file:// so its origin is null."
+    }
+  ],
+  "connections": {
+    "POST /tasks-sync": { "main": [ [ { "node": "Upsert Snapshot", "type": "main", "index": 0 } ] ] },
+    "Upsert Snapshot":  { "main": [ [ { "node": "Respond OK", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Europe/Vilnius" },
+  "active": false,
+  "pinData": {},
+  "meta": { "instanceId": "priority-board-tasks" },
+  "tags": [ { "name": "tasks-nudge" } ]
+}
