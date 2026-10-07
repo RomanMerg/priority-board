@@ -1,0 +1,32 @@
+# Secrets / local config (n8n credentials & variables live in n8n, never in the repo)
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+credentials.json
+
+# Exported n8n instance data (can embed credential ids / tokens)
+n8n-export*/
+*.n8n-backup.json
+
+# Board state exports and snapshots downloaded from the UI (contain your real tasks)
+snapshot_*.json
+priority_board_export*.json
+pb_export*.json
+
+# Database dumps
+*.sql.gz
+*.dump
+*.bak
+
+# Claude Code / agent scratch (worktrees, session ledgers, local settings)
+.claude/
+.superpowers/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
