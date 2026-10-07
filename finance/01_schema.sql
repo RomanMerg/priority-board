@@ -1,7 +1,7 @@
 -- ============================================================
 -- Priority Board · Finance module schema
 -- Target: local PostgreSQL (docker), schema `fin`
--- Run: psql -U postgres -d automation -f 01_schema.sql
+-- Run: psql -U postgres -d automation_internal -f 01_schema.sql
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS fin;
