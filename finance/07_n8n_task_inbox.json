@@ -1,0 +1,119 @@
+{
+  "name": "PB 07 · Task inbox",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "add-task", "responseMode": "responseNode", "options": {} },
+      "id": "a1", "name": "POST /add-task", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+      "position": [0, 0], "webhookId": "pb-add-task"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ String($json.body.label || '').trim() }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a2", "name": "Has label?", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pb.task_inbox (label, due, severity, source, ref)\nSELECT trim(x.label), NULLIF(x.due, '')::date, NULLIF(x.severity, '')::smallint, COALESCE(NULLIF(x.source, ''), 'voice'), NULLIF(x.ref, '')\nFROM json_to_record($1::json) AS x(label text, due text, severity text, source text, ref text)\nON CONFLICT (ref) DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ label: String($json.body.label), due: String($json.body.due || ''), severity: String($json.body.severity ?? ''), source: String($json.body.source || ''), ref: String($json.body.ref || '') }) }}"
+        }
+      },
+      "id": "a3", "name": "Insert task", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
+      "position": [440, -80], "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, inserted: $json.id ? 1 : 0 }) }}",
+        "options": { "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] } }
+      },
+      "id": "a4", "name": "Respond added", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+      "position": [660, -80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'label required' }) }}",
+        "options": { "responseCode": 400, "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] } }
+      },
+      "id": "a5", "name": "Respond 400", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+      "position": [440, 80]
+    },
+    {
+      "parameters": { "httpMethod": "GET", "path": "task-inbox", "responseMode": "responseNode", "options": {} },
+      "id": "b1", "name": "GET /task-inbox", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+      "position": [0, 260], "webhookId": "pb-task-inbox"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE pb.task_inbox SET claimed = true WHERE claimed = false\nRETURNING id, label, due::text AS due, severity, source, ref;",
+        "options": {}
+      },
+      "id": "b2", "name": "Claim unclaimed", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
+      "position": [220, 260], "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().map(i => i.json).filter(r => r.id)) }}",
+        "options": { "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] } }
+      },
+      "id": "b3", "name": "Respond rows", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+      "position": [440, 260], "executeOnce": true
+    },
+    {
+      "parameters": { "httpMethod": "GET", "path": "task-snapshot", "responseMode": "responseNode", "options": {} },
+      "id": "c1", "name": "GET /task-snapshot", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+      "position": [0, 460], "webhookId": "pb-task-snapshot"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tasks, synced_at FROM pb.daily_snapshot WHERE id = 1;",
+        "options": {}
+      },
+      "id": "c2", "name": "Read snapshot", "type": "n8n-nodes-base.postgres", "typeVersion": 2.5,
+      "position": [220, 460], "alwaysOutputData": true,
+      "credentials": { "postgres": { "id": "PG_LOCAL", "name": "Postgres local" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ tasks: $json.tasks || [], synced_at: $json.synced_at || null }) }}",
+        "options": { "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] } }
+      },
+      "id": "c3", "name": "Respond snapshot", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+      "position": [440, 460]
+    }
+  ],
+  "connections": {
+    "POST /add-task": { "main": [ [ { "node": "Has label?", "type": "main", "index": 0 } ] ] },
+    "Has label?": { "main": [
+      [ { "node": "Insert task", "type": "main", "index": 0 } ],
+      [ { "node": "Respond 400", "type": "main", "index": 0 } ]
+    ] },
+    "Insert task": { "main": [ [ { "node": "Respond added", "type": "main", "index": 0 } ] ] },
+    "GET /task-inbox": { "main": [ [ { "node": "Claim unclaimed", "type": "main", "index": 0 } ] ] },
+    "Claim unclaimed": { "main": [ [ { "node": "Respond rows", "type": "main", "index": 0 } ] ] },
+    "GET /task-snapshot": { "main": [ [ { "node": "Read snapshot", "type": "main", "index": 0 } ] ] },
+    "Read snapshot": { "main": [ [ { "node": "Respond snapshot", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,7 +1,7 @@
 -- ============================================================
 -- Priority Board · Task nudges schema
 -- Target: local PostgreSQL (docker), schema `pb`
--- Run: psql -U postgres -d automation -f 04_pb_schema.sql
+-- Run: psql -U postgres -d automation_internal -f 04_pb_schema.sql
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS pb;
@@ -16,4 +16,21 @@ CREATE TABLE IF NOT EXISTS daily_snapshot (
   id          SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   tasks       JSONB NOT NULL DEFAULT '[]'::jsonb, -- [{num,label,severity,due,dailyDone}]
   synced_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── task_inbox (claim-on-read) ────────────────────────────────
+-- Tasks created outside the board (voice agent, daily-brief routine).
+-- The board claims unclaimed rows once per page load. `ref` dedupes
+-- routine picks across days. See
+-- docs/superpowers/specs/2026-09-28-task-inbox-design.md and the
+-- daily-brief spec in smb-automation-internal.
+CREATE TABLE IF NOT EXISTS task_inbox (
+  id          SERIAL PRIMARY KEY,
+  label       TEXT NOT NULL,
+  due         DATE,
+  severity    SMALLINT,
+  source      TEXT NOT NULL DEFAULT 'voice',
+  ref         TEXT UNIQUE,
+  claimed     BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

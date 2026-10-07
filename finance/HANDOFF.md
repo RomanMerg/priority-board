@@ -49,7 +49,7 @@ messages daily gets muted in a week, which costs you the whole alerting channel.
 
 ## Setup order
 
-1. `psql -U postgres -d automation -f 01_schema.sql`
+1. `psql -U postgres -d automation_internal -f 01_schema.sql`
 2. GoCardless: register at bankaccountdata.gocardless.com, create secret_id/secret_key.
 3. n8n → Settings → Variables: `GC_SECRET_ID`, `GC_SECRET_KEY`, `TG_CHAT_ID`.
 4. n8n credentials: Postgres named `Postgres local`, Telegram named `Telegram bot`
