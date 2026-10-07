@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS task_inbox (
   due         DATE,
   severity    SMALLINT,
   source      TEXT NOT NULL DEFAULT 'voice',
-  ref         TEXT UNIQUE,
+  ref         TEXT,
   claimed     BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- One *open* row per ref: a ref can be re-picked on a later day once the earlier row was claimed.
+CREATE UNIQUE INDEX IF NOT EXISTS task_inbox_ref_open ON task_inbox (ref) WHERE NOT claimed;

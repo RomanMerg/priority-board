@@ -27,7 +27,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO pb.task_inbox (label, due, severity, source, ref)\nSELECT trim(x.label), NULLIF(x.due, '')::date, NULLIF(x.severity, '')::smallint, COALESCE(NULLIF(x.source, ''), 'voice'), NULLIF(x.ref, '')\nFROM json_to_record($1::json) AS x(label text, due text, severity text, source text, ref text)\nON CONFLICT (ref) DO NOTHING\nRETURNING id;",
+        "query": "INSERT INTO pb.task_inbox (label, due, severity, source, ref)\nSELECT trim(x.label), NULLIF(x.due, '')::date, NULLIF(x.severity, '')::smallint, COALESCE(NULLIF(x.source, ''), 'voice'), NULLIF(x.ref, '')\nFROM json_to_record($1::json) AS x(label text, due text, severity text, source text, ref text)\nON CONFLICT (ref) WHERE NOT claimed DO NOTHING\nRETURNING id;",
         "options": {
           "queryReplacement": "={{ JSON.stringify({ label: String($json.body.label), due: String($json.body.due || ''), severity: String($json.body.severity ?? ''), source: String($json.body.source || ''), ref: String($json.body.ref || '') }) }}"
         }

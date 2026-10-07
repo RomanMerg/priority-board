@@ -1515,14 +1515,17 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
 
 /* ─── TASKS SYNC (nudges) + TASK INBOX ─── */
 (function(){
-  let syncTimer=null;
+  let syncTimer=null,lastPull=0;
   function webhookBase(){let url='';try{url=localStorage.getItem('pb_tasks_webhook')||'';}catch(e){}return url;}
-  function sibling(url,name){const i=url.lastIndexOf('/');return i===-1?url:url.slice(0,i+1)+name;}
+  function sibling(url,name){url=url.replace(/\/$/,'');const i=url.lastIndexOf('/');return i===-1?url:url.slice(0,i+1)+name;}
   function doSync(){
     const url=webhookBase();
     if(!url)return;
-    const daily=tasks.filter(t=>t.inDaily).map(t=>({num:t.num,label:t.label,severity:t.severity,due:t.due,dailyDone:t.dailyDone,ref:t.ref||null,source:t.source||null}));
-    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks:daily})}).catch(()=>{});
+    // Kanban "done" clears inDaily, so also send recently finished ref'd tasks (as dailyDone) for the evening recap.
+    const since=Date.now()-24*60*60*1000;
+    const isRecentDone=t=>!!t.ref&&t.status==='done'&&(t.updatedAt||0)>=since;
+    const daily=tasks.filter(t=>t.inDaily||isRecentDone(t)).map(t=>({num:t.num,label:t.label,severity:t.severity,due:t.due,dailyDone:t.inDaily?t.dailyDone:true,ref:t.ref||null,source:t.source||null}));
+    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks:daily})}).catch(e=>{console.warn('[pb] tasks sync failed',e);});
   }
   window.pbTasksSyncPing=function(){
     clearTimeout(syncTimer);
@@ -1531,6 +1534,7 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
   window.pbInboxPull=function(){
     const url=webhookBase();
     if(!url)return;
+    lastPull=Date.now();
     fetch(sibling(url,'task-inbox')).then(r=>r.ok?r.json():[]).then(rows=>{
       if(!Array.isArray(rows)||!rows.length)return;
       rows.forEach(r=>{
@@ -1540,8 +1544,14 @@ window.addEventListener('resize',()=>{renderVennSVG();renderChips();});
         tasks.push({id,num,label:String(r.label),isEpic:false,parentId:null,status:'open',placed:false,pxPct:0,pyPct:0,zoneIds:[],updatedAt:Date.now(),childrenExpanded:true,epicExpanded:true,inDaily:!r.due,dailyDone:false,severity:parseInt(r.severity)||0,due:r.due||'',source:r.source||'voice',ref:r.ref||null});
       });
       save();render();
-    }).catch(()=>{});
+    }).catch(e=>{console.warn('[pb] inbox pull failed',e);});
   };
+  // An open tab picks up fresh routine picks when it becomes visible again (at most once per 5 minutes).
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='visible')return;
+    if(Date.now()-lastPull<5*60*1000)return;
+    window.pbInboxPull();
+  });
 })();
 
 load();
